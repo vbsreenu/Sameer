@@ -1,0 +1,175 @@
+#!/bin/bash
+
+# Usage:  SameerReport file.sam file.anno ref.fa
+
+# This will create all the necessary files. This can be run without annotation and reference file
+
+samFile=$(echo $1|sed s/.sam$//g|sed s/_/-/g);
+
+
+if [ $# -gt 2 ]; then
+        negStrand=$(awk '$3=="-"' $2|wc -l)
+        if [ $negStrand -lt 1 ]; then
+                SAMEER_NEW $1 $2 $3 > variations.txt
+        else
+                GenomeLen=$(grep -v ">" $3 |tr -d '\n' |wc -c);
+                awk '$3=="+"' $2 > temp-1-$$.anno
+                awk 'BEGIN{GenomeLen=ARGV[2]; delete ARGV[2]} $3=="-"{print (GenomeLen-$2)+1"\t"(GenomeLen-$1)+1"\t+\t"$4}' $2 $GenomeLen > temp-2-$$.anno
+		head -1 $3 > temp-genome-$$.fa
+                grep -v ">" $3 |tr -d '\n' |rev|tr '[ATGC]' '[TACG]'|fold -w 70 >> temp-genome-$$.fa
+                SAMEER_NEW $1 temp-1-$$.anno $3 > variations.txt
+		if  [ $# -eq 4 ]; then
+			tanoti -p 0 -r temp-genome-$$.fa -i $4 -o temp-$$.sam
+		fi
+
+		if  [ $# -eq 3 ]; then
+			tanoti -p 0 -r temp-genome-$$.fa -i $4 $5 -o temp-$$.sam
+		fi
+
+                SAMEER_NEW temp-$$.sam temp-2-$$.anno temp-genome-$$.fa >> variations.txt
+        fi
+fi
+
+#rm -f temp-*$$*
+
+# Now generate graphs
+
+coverage.R coverage
+entropy.R entropy
+insert.R	insLen
+map.R mapPerc
+quality.R quality
+
+#Now create a latex file
+>ltxFile.tex
+
+echo "\documentclass{article}" >> ltxFile.tex
+echo "\usepackage{graphicx}" >> ltxFile.tex 
+echo "\usepackage{booktabs}" >> ltxFile.tex
+echo "\usepackage{varwidth}" >> ltxFile.tex
+echo "\usepackage{lscape}" >> ltxFile.tex
+echo "\usepackage{color}" >> ltxFile.tex
+echo "\usepackage{fancyvrb}" >> ltxFile.tex
+echo "\usepackage{longtable}" >> ltxFile.tex
+echo "\usepackage{geometry}" >> ltxFile.tex
+echo "\geometry{textwidth=17cm, layoutheight=31cm}" >> ltxFile.tex
+echo "\setlength\parindent{0pt}" >> ltxFile.tex
+echo "\newsavebox\tmpbox" >> ltxFile.tex
+echo "\begin{document}" >> ltxFile.tex
+echo "\begin{flushright} {{\scriptsize \bf \color{red} Sameer Report} } \end{flushright}" >> ltxFile.tex
+echo "{\large{\sc \color{blue}$samFile}}" >> ltxFile.tex
+echo "\vskip .5cm \hrule \vskip .5cm" >> ltxFile.tex
+echo "\begin{table}[hb]" >> ltxFile.tex
+echo "\sbox\tmpbox{" >> ltxFile.tex
+echo "\begin{tabular}[b]{p{5cm} l }" >> ltxFile.tex
+
+cat genStats|sed s/_/-/g >> ltxFile.tex
+printf '\n%s\n' "\end{tabular} \\\\ " >> ltxFile.tex
+echo "}" >> ltxFile.tex 
+
+echo "\renewcommand*{\arraystretch}{0}" >> ltxFile.tex
+echo "\begin{tabular*}{\linewidth}{@{\extracolsep\fill}p{\wd\tmpbox}p{45mm}@{}}" >> ltxFile.tex
+echo "\usebox\tmpbox &" >> ltxFile.tex
+printf '%s\n' "\includegraphics[width=3.75cm]{map.jpg} \\\\" >> ltxFile.tex
+echo "&" >> ltxFile.tex
+echo "\end{tabular*}" >> ltxFile.tex
+echo "\end{table}" >> ltxFile.tex
+
+
+echo "\vskip .5cm" >> ltxFile.tex
+#printf '%s\n' "Coverage \\\\" >> ltxFile.tex
+
+printf '%s\n' "{\sc \color{blue} \small Coverage} \\\\" >>  ltxFile.tex
+
+printf '%s\n' "\includegraphics[width=17cm]{coverage.jpg} \\\\" >> ltxFile.tex
+
+echo "\vskip .25cm" >> ltxFile.tex
+
+#printf '%s\n' "Entropy\\\\" >> ltxFile.tex
+printf '%s\n' "{\sc \color{blue} \small Shannon Entropy} \\\\" >>  ltxFile.tex
+printf '%s\n' "\includegraphics[width=17cm]{entropy.jpg} \\\\" >> ltxFile.tex
+
+echo "\newpage" >> ltxFile.tex
+
+#printf '%s\n' "Consensus sequence\\\\" >> ltxFile.tex
+printf '%s\n' "{\sc \color{blue} \small Consensus sequence} \\\\" >>  ltxFile.tex
+
+echo "\begin{Verbatim}[fontsize=\small]" >> ltxFile.tex
+cat consensus >> ltxFile.tex
+echo "" >> ltxFile.tex
+echo "\end{Verbatim}" >> ltxFile.tex
+
+echo "\vskip 1cm" >> ltxFile.tex
+echo "\hskip .6cm" >> ltxFile.tex
+echo "\begin{tabular}{p{12cm} l}" >> ltxFile.tex
+echo "\toprule " >> ltxFile.tex
+printf '%s\n' "\multicolumn{2}{c}{Genome Composition} \\\\" >> ltxFile.tex
+echo "\midrule" >> ltxFile.tex
+
+cat consensusStats >> ltxFile.tex
+echo "" >> ltxFile.tex
+echo "\bottomrule" >> ltxFile.tex
+echo "\end{tabular}" >> ltxFile.tex
+echo "\newpage" >> ltxFile.tex
+
+printf '%s\n' "{\sc \color{blue} \small Read quality} \\\\" >>  ltxFile.tex
+printf '%s\n' "\includegraphics[width=17cm]{quality.jpg} \\\\" >> ltxFile.tex
+echo "\vskip .5cm" >> ltxFile.tex
+
+printf '%s\n' "{\sc \color{blue} \small Insert length distribution} \\\\" >>  ltxFile.tex
+printf '%s\n' "\includegraphics[width=17cm]{insert.jpg} \\\\" >> ltxFile.tex
+
+echo "\newpage" >> ltxFile.tex
+
+
+## Print variations
+if [ $# -gt 2 ]; then 
+	printf '%s\n' "{\sc \color{blue} \small Amino acid variations} \\\\" >>  ltxFile.tex
+	echo "\vskip .5cm" >> ltxFile.tex
+
+	printf '%s\n' "\begin{longtable}{l l l l l}" >>  ltxFile.tex
+	echo "\toprule" >> ltxFile.tex
+	printf '%s\n' "{\bf Protein }& {\bf Position} &{\bf Ref AA }& {\bf Consensus AA }&{\bf All AAs} \\\\" >>  ltxFile.tex
+	echo "\midrule" >> ltxFile.tex
+
+	awk '{if($(NF-1)~/-/) name=$0; if($4~/:/&&($2!=$3||NF>5)) print name,$0}' variations.txt > temp1
+	awk '{if($(NF-1)~/-/) name=$0; if($4~/:/&&($2!=$3||NF>5)) print name,$0}' variations.txt |awk '{print $1,$4,$5,$6}' > temp2
+
+	while read line; do echo $line|awk '{for(i=7;i<=NF;i+=2) print $i,$(i+1)}' |sort -grk2|awk '{printf "%s:%s ",$1,$2; }END{printf"\n"}'; done < temp1 > temp3
+	paste temp2 temp3 |awk '{if($1!=prev){printf("\\midrule\n"); prev=$1} for(i=1;i<=4;i++) printf("%s &",$i); for(i=5;i<=NF;i++) printf("%s ",$i); printf("\\\\ \n")}' > temp4
+	cat temp4 >> ltxFile.tex
+	echo "\bottomrule" >>  ltxFile.tex
+	echo "\end{longtable}" >>  ltxFile.tex
+	echo "\newpage" >> ltxFile.tex
+	rm -f temp?
+fi
+
+
+## This is for meta data
+#usr=$(whoami);
+#hname=$(hostname);
+#loc=$(pwd);
+#dt=$(date);
+
+#printf '%s\n' "\begin{tabular}{p{4cm} l}" >>  ltxFile.tex
+#echo "\toprule" >> ltxFile.tex
+#printf '%s\n' "\multicolumn{2}{c}{Meta data} \\\\" >>  ltxFile.tex
+#echo "\midrule" >>  ltxFile.tex
+#printf '%s\n' "Assembly file: & $1\\\\" |sed s/_/-/g >>  ltxFile.tex
+#printf '%s\n'  "Annotation file: & $2\\\\" |sed s/_/-/g >>  ltxFile.tex
+#printf '%s\n'  "Reference file: & $3\\\\"  |sed s/_/-/g >>  ltxFile.tex
+#echo "\midrule" >>  ltxFile.tex
+#printf '%s\n' "User name& $usr \\\\" >>  ltxFile.tex
+#printf '%s\n' "Hostname & $hname \\\\" >>  ltxFile.tex
+#printf '%s\n' "Location & $loc \\\\" |sed s/_/-/g >>  ltxFile.tex
+#printf '%s\n' "Date/Time & $dt \\\\" >>  ltxFile.tex
+#echo "\bottomrule" >>  ltxFile.tex
+#echo "\end{tabular}" >>  ltxFile.tex
+
+
+echo "\end{document}" >> ltxFile.tex
+
+pdflatex ltxFile; mv ltxFile.pdf $samFile.pdf
+
+#Remove temp files
+rm -f consensus consensusStats coverage coverage.jpg entropy entropy.jpg genStats insert.jpg insLen ltxFile.* map.jpg mapPerc quality quality.jpg 
