@@ -1,5 +1,5 @@
 # Sameer
-Program for getting mapping statistics, generate consensus and to get low frequency variats from a sam file.
+Program to get mapping statistics, generate consensus and to get low frequency variats from a sam file.
 
 ## Installation
 ```
@@ -51,10 +51,7 @@ Glycoprotein    21-3614 1198
 10 S S  S: 99.89(1895)
 ```
 
-PDF output can be see in demo direcory.
-
-
-
+PDF output (1-MRU25010-M-mapped.pdf) can be see in demo direcory.
 
 
 ## Dependencies:
